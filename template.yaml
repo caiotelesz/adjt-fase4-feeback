@@ -15,6 +15,14 @@ Parameters:
     Type: String
     Description: Fuso horario usado nas datas dos e-mails e no agrupamento por dia do relatorio
     Default: America/Sao_Paulo
+  Versao:
+    Type: String
+    Description: Versao da aplicacao publicada (definida pelo pipeline)
+    Default: desenvolvimento
+  Commit:
+    Type: String
+    Description: Identificador curto do commit publicado (definido pelo pipeline)
+    Default: local
 
 Globals:
   Function:
@@ -23,11 +31,13 @@ Globals:
       - arm64
     MemorySize: 512
     Timeout: 15
-    CodeUri: target/feedback-platform-1.0-SNAPSHOT.jar
+    CodeUri: target/feedback-platform.jar
     Tracing: Active
     Environment:
       Variables:
         FUSO_HORARIO: !Ref FusoHorario
+        VERSAO: !Ref Versao
+        COMMIT: !Ref Commit
   Api:
     OpenApiVersion: 3.0.1
     TracingEnabled: true
@@ -133,6 +143,11 @@ Resources:
     Properties:
       RetentionInDays: 14
 
+  VersaoLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+
   # ---------------------------------------------------------------------------
   # Funcoes
   # ---------------------------------------------------------------------------
@@ -225,6 +240,25 @@ Resources:
           Properties:
             Schedule: cron(0 12 ? * MON *)
             Description: Toda segunda-feira as 12h UTC (9h em Brasilia)
+
+  VersaoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: adjt.fase4.feedback.handler.VersaoHandler::handleRequest
+      Description: Informa a versao da aplicacao que esta publicada
+      LoggingConfig:
+        LogGroup: !Ref VersaoLogGroup
+        LogFormat: JSON
+      Events:
+        GetVersao:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AvaliacaoApi
+            Path: /versao
+            Method: get
+            # Consulta publica, sem dados: usada pelo pipeline e por quem opera
+            Auth:
+              ApiKeyRequired: false
 
   # ---------------------------------------------------------------------------
   # Monitoramento
@@ -439,6 +473,12 @@ Outputs:
   ApiUrl:
     Description: URL do endpoint POST /avaliacao
     Value: !Sub 'https://${AvaliacaoApi}.execute-api.${AWS::Region}.amazonaws.com/prod/avaliacao'
+  VersaoUrl:
+    Description: URL do endpoint GET /versao
+    Value: !Sub 'https://${AvaliacaoApi}.execute-api.${AWS::Region}.amazonaws.com/prod/versao'
+  Versao:
+    Description: Versao publicada
+    Value: !Ref Versao
   ApiKeyId:
     Description: Identificador da chave de API (o valor e obtido com aws apigateway get-api-key --include-value)
     Value: !Ref AvaliacaoApiApiKey

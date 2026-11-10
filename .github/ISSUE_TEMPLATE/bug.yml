@@ -1,0 +1,31 @@
+name: Reportar erro
+description: Registrar um problema reproduzível da plataforma de feedback
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Não inclua chaves de API, e-mails pessoais, identificadores de conta AWS nem o conteúdo de feedbacks reais."
+  - type: textarea
+    id: passos
+    attributes:
+      label: Passos para reproduzir
+      description: Requisição enviada (método, caminho e corpo) ou ação que apresentou a falha.
+    validations:
+      required: true
+  - type: textarea
+    id: resultado
+    attributes:
+      label: Resultado esperado e observado
+    validations:
+      required: true
+  - type: input
+    id: versao
+    attributes:
+      label: Versão
+      description: Informe a versão e o commit devolvidos por GET /versao.
+  - type: textarea
+    id: evidencia
+    attributes:
+      label: Evidência sem dados pessoais ou segredos
+      description: Resposta da API, trecho de log ou identificador da requisição.
