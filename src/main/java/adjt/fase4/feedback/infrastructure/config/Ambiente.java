@@ -19,6 +19,12 @@ public final class Ambiente {
     return valor;
   }
 
+  /** Valor da variável, ou o padrão informado quando ela não está definida. */
+  public static String opcional(String nome, String padrao) {
+    String valor = System.getenv(nome);
+    return valor == null || valor.isBlank() ? padrao : valor;
+  }
+
   /** Fuso usado nos e-mails, definido em {@code FUSO_HORARIO} (padrão: Brasília). */
   public static ZoneId fusoHorario() {
     String valor = System.getenv("FUSO_HORARIO");
