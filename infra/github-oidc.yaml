@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Papel IAM que o GitHub Actions assume por OIDC para publicar a pilha da
+  plataforma de feedback. Criado uma unica vez por conta AWS, antes do
+  primeiro deploy automatizado.
+
+Parameters:
+  Repositorio:
+    Type: String
+    Default: caiotelesz/adjt-fase4-feeback
+    Description: Repositorio do GitHub autorizado a assumir o papel (dono/nome)
+  NomeDaPilha:
+    Type: String
+    Default: feedback-platform
+    Description: Nome da pilha publicada pelo pipeline
+  CriarProvedorOidc:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Use false se a conta ja tiver o provedor token.actions.githubusercontent.com
+
+Conditions:
+  CriarProvedor: !Equals [!Ref CriarProvedorOidc, 'true']
+
+Resources:
+  ProvedorGitHub:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CriarProvedor
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  PapelDeDeploy:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${NomeDaPilha}-github-deploy'
+      Description: Assumido pelo GitHub Actions para o deploy da plataforma de feedback
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithWebIdentity
+            Principal:
+              Federated: !If
+                - CriarProvedor
+                - !Ref ProvedorGitHub
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                # Somente a branch main e o ambiente "producao" do repositorio informado
+                token.actions.githubusercontent.com:sub:
+                  - !Sub 'repo:${Repositorio}:ref:refs/heads/main'
+                  - !Sub 'repo:${Repositorio}:environment:producao'
+      Policies:
+        - PolicyName: deploy-da-plataforma
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: PilhasDaPlataformaEDoSam
+                Effect: Allow
+                Action: cloudformation:*
+                Resource:
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${NomeDaPilha}/*'
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*'
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31'
+              - Sid: ConsultasDoCloudFormation
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ListStacks
+                  - cloudformation:ValidateTemplate
+                Resource: '*'
+              - Sid: BucketDeArtefatosDoSam
+                Effect: Allow
+                Action: s3:*
+                Resource:
+                  - arn:aws:s3:::aws-sam-cli-managed-default-*
+                  - arn:aws:s3:::aws-sam-cli-managed-default-*/*
+              - Sid: PapeisDasFuncoes
+                Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:DeleteRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${NomeDaPilha}-*'
+              - Sid: ServicosUsadosPelaPlataforma
+                Effect: Allow
+                Action:
+                  - apigateway:*
+                  - cloudwatch:*
+                  - dynamodb:*
+                  - events:*
+                  - lambda:*
+                  - logs:*
+                  - sns:*
+                  - sqs:*
+                Resource: '*'
+
+Outputs:
+  PapelArn:
+    Description: Valor do secret AWS_DEPLOY_ROLE_ARN no GitHub
+    Value: !GetAtt PapelDeDeploy.Arn

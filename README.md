@@ -256,11 +256,21 @@ O fluxo [`ci-cd.yml`](.github/workflows/ci-cd.yml) roda em todo push e pull requ
 1. **Build e testes:** `mvn verify` (testes, regras de arquitetura e cobertura mínima) e `sam validate --lint`.
 2. **Deploy** (somente na `main`): `sam deploy` com o pacote gerado na etapa anterior.
 
-Configuração única no repositório do GitHub:
+Preparação, feita uma única vez:
+
+1. Criar na conta AWS o papel que o GitHub assume, a partir de [`infra/github-oidc.yaml`](infra/github-oidc.yaml):
+
+```bash
+aws cloudformation deploy --stack-name feedback-platform-github-oidc --template-file infra/github-oidc.yaml --capabilities CAPABILITY_NAMED_IAM
+```
+
+   O papel só pode ser assumido pela branch `main` e pelo ambiente `producao` deste repositório, e suas permissões se limitam aos serviços usados pela plataforma. Se a conta já tiver o provedor `token.actions.githubusercontent.com`, acrescente `--parameter-overrides CriarProvedorOidc=false`.
+
+2. Cadastrar no repositório, em *Settings → Secrets and variables → Actions*:
 
 | Tipo | Nome | Valor |
 |---|---|---|
-| Secret | `AWS_DEPLOY_ROLE_ARN` | ARN do papel IAM que o GitHub assume por OIDC |
+| Secret | `AWS_DEPLOY_ROLE_ARN` | ARN do papel criado no passo 1 (saída `PapelArn`) |
 | Secret | `EMAIL_REMETENTE` | E-mail remetente verificado no SES |
 | Secret | `EMAIL_ADMIN` | E-mail do administrador |
 | Variable | `AWS_REGION` | Região do deploy (padrão `us-east-2`) |
