@@ -98,6 +98,7 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
+            --on-failure DELETE \
             --parameter-overrides "EmailRemetente=$EMAIL_REMETENTE" "EmailAdmin=$EMAIL_ADMIN"
 
       - name: Mostrar as saidas da pilha
