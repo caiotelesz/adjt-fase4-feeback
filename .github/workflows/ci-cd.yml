@@ -1,7 +1,8 @@
 name: CI/CD
 
 # Em todo push e pull request: compila, roda os testes e valida o template.
-# No push para a main (ou disparo manual): publica a pilha na AWS com o SAM.
+# No push para a main (ou disparo manual): publica na AWS com o SAM, confere
+# a versao que ficou no ar e registra a release no GitHub.
 on:
   push:
     branches: [main]
@@ -20,14 +21,38 @@ jobs:
   build:
     name: Build e testes
     runs-on: ubuntu-latest
+    outputs:
+      versao: ${{ steps.versao.outputs.versao }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # As tags definem o numero da proxima versao
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
           distribution: corretto
           java-version: '21'
           cache: maven
+
+      # A serie (maior.menor) vem do pom.xml; o ultimo numero cresce sozinho a
+      # cada publicacao, a partir da ultima tag vMAIOR.MENOR.N existente.
+      - name: Definir a versao
+        id: versao
+        run: |
+          set -euo pipefail
+          git fetch --tags --force --quiet
+          BASE=$(mvn -q -B help:evaluate -Dexpression=project.version -DforceStdout)
+          SERIE=${BASE%.*}
+          ULTIMA=$(git tag --list "v${SERIE}.*" --sort=-v:refname | head -n 1)
+          if [ -z "$ULTIMA" ]; then
+            CORRECAO=${BASE##*.}
+          else
+            CORRECAO=$(( ${ULTIMA##*.} + 1 ))
+          fi
+          VERSAO="${SERIE}.${CORRECAO}"
+          echo "versao=$VERSAO" >> "$GITHUB_OUTPUT"
+          echo "Versao desta execucao: **$VERSAO** (ultima publicada: ${ULTIMA:-nenhuma})" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Compilar, testar e medir cobertura
         run: mvn -B verify
@@ -69,6 +94,7 @@ jobs:
       STACK_NAME: ${{ vars.STACK_NAME || 'feedback-platform' }}
       EMAIL_REMETENTE: ${{ secrets.EMAIL_REMETENTE }}
       EMAIL_ADMIN: ${{ secrets.EMAIL_ADMIN }}
+      VERSAO: ${{ needs.build.outputs.versao }}
     steps:
       - uses: actions/checkout@v4
 
@@ -99,7 +125,11 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --on-failure DELETE \
-            --parameter-overrides "EmailRemetente=$EMAIL_REMETENTE" "EmailAdmin=$EMAIL_ADMIN"
+            --parameter-overrides \
+              "EmailRemetente=$EMAIL_REMETENTE" \
+              "EmailAdmin=$EMAIL_ADMIN" \
+              "Versao=$VERSAO" \
+              "Commit=${GITHUB_SHA::7}"
 
       - name: Mostrar as saidas da pilha
         run: |
@@ -108,3 +138,52 @@ jobs:
             --region "$AWS_REGION" \
             --query 'Stacks[0].Outputs[].[OutputKey,OutputValue]' \
             --output table
+
+      # A release so e registrada se a aplicacao no ar responder com a versao nova.
+      - name: Conferir a versao publicada
+        run: |
+          set -euo pipefail
+          URL=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='VersaoUrl'].OutputValue" \
+            --output text)
+          for tentativa in 1 2 3 4 5 6; do
+            NO_AR=$(curl -fsS --max-time 20 "$URL" | jq -r '.versao' || true)
+            if [ "$NO_AR" = "$VERSAO" ]; then
+              echo "Versao $NO_AR no ar em $URL"
+              echo "Publicada a versao **$NO_AR** em $URL" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Tentativa $tentativa: esperava $VERSAO, obtive '${NO_AR:-sem resposta}'"
+            sleep 10
+          done
+          exit 1
+
+  release:
+    name: Registrar a release
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSAO: ${{ needs.build.outputs.versao }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Baixar o pacote publicado
+        uses: actions/download-artifact@v4
+        with:
+          name: feedback-platform
+          path: pacote
+
+      # A tag vX.Y.Z aponta para o commit publicado; as notas listam os PRs
+      # incluidos desde a release anterior e o pacote fica anexado.
+      - name: Criar a tag e a release
+        run: |
+          set -euo pipefail
+          mv pacote/feedback-platform.jar "feedback-platform-$VERSAO.jar"
+          gh release create "v$VERSAO" "feedback-platform-$VERSAO.jar" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSAO" \
+            --generate-notes
