@@ -1,5 +1,6 @@
 package adjt.fase4.feedback.handler;
 
+import java.time.Clock;
 import java.util.Map;
 
 import com.amazonaws.services.lambda.runtime.Context;
@@ -8,47 +9,60 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.cfg.CoercionAction;
+import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.type.LogicalType;
 
-import adjt.fase4.feedback.application.dto.request.AvaliacaoRequest;
-import adjt.fase4.feedback.application.dto.response.AvaliacaoResponse;
-import adjt.fase4.feedback.common.avaliacao.Avaliacao;
-import adjt.fase4.feedback.common.model.Urgencia;
+import adjt.fase4.feedback.application.usecase.RegistrarAvaliacao;
+import adjt.fase4.feedback.domain.AvaliacaoInvalidaException;
+import adjt.fase4.feedback.handler.dto.AvaliacaoRequest;
+import adjt.fase4.feedback.handler.dto.AvaliacaoResponse;
+import adjt.fase4.feedback.infrastructure.config.Ambiente;
+import adjt.fase4.feedback.infrastructure.config.ClientesAws;
 import adjt.fase4.feedback.infrastructure.dynamo.DynamoAvaliacaoRepository;
 import adjt.fase4.feedback.infrastructure.sns.SnsAlertaCritico;
-import adjt.fase4.feedback.port.AlertaCritico;
-import adjt.fase4.feedback.port.AvaliacaoRepository;
-import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.sns.SnsClient;
 
+/**
+ * Função 1 — recebimento de feedbacks ({@code POST /avaliacao}).
+ *
+ * <p>Adaptador HTTP: traduz a requisição do API Gateway para o caso de uso
+ * {@link RegistrarAvaliacao} e o resultado para uma resposta HTTP.
+ *
+ * <ul>
+ *   <li>201: avaliação registrada;</li>
+ *   <li>400: corpo ausente, JSON malformado ou regra de negócio violada;</li>
+ *   <li>500: falha inesperada (o detalhe vai para o log, não para o cliente).</li>
+ * </ul>
+ */
 public class AvaliacaoHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
-  private static final ObjectMapper MAPPER = new ObjectMapper()
-      .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT);
+  /** Texto procurado pelo filtro de métrica que alimenta o alarme de alerta não publicado. */
+  static final String ALERTA_NAO_PUBLICADO = "ALERTA_CRITICO_NAO_PUBLICADO";
 
-  private final AvaliacaoRepository repository;
-  private final AlertaCritico alerta;
+  private static final ObjectMapper MAPPER = criarMapper();
 
-  public AvaliacaoHandler(AvaliacaoRepository repository, AlertaCritico alerta) {
-    this.repository = repository;
-    this.alerta = alerta;
+  private final RegistrarAvaliacao registrarAvaliacao;
+
+  /** Usado pelo Lambda: monta as dependências reais uma vez por ambiente de execução. */
+  public AvaliacaoHandler() {
+    this(new RegistrarAvaliacao(
+        new DynamoAvaliacaoRepository(ClientesAws.dynamo(), Ambiente.obrigatoria("TABELA_AVALIACOES")),
+        new SnsAlertaCritico(ClientesAws.sns(), Ambiente.obrigatoria("TOPICO_CRITICO_ARN")),
+        Clock.systemUTC()));
   }
 
-  public AvaliacaoHandler() {
-    this(
-        new DynamoAvaliacaoRepository(
-            DynamoDbClient.builder().httpClient(UrlConnectionHttpClient.create()).build(),
-            System.getenv("TABELA_AVALIACOES")),
-        new SnsAlertaCritico(
-            SnsClient.builder().httpClient(UrlConnectionHttpClient.create()).build(),
-            System.getenv("TOPICO_CRITICO_ARN")));
+  public AvaliacaoHandler(RegistrarAvaliacao registrarAvaliacao) {
+    this.registrarAvaliacao = registrarAvaliacao;
   }
 
   @Override
   public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
     try {
-
       String body = event.getBody();
       if (body == null || body.isBlank()) {
         return erro(400, "O corpo da requisição é obrigatório");
@@ -57,53 +71,56 @@ public class AvaliacaoHandler implements RequestHandler<APIGatewayProxyRequestEv
       AvaliacaoRequest request;
       try {
         request = MAPPER.readValue(body, AvaliacaoRequest.class);
+      } catch (UnrecognizedPropertyException e) {
+        return erro(400, "Campo desconhecido: '" + e.getPropertyName() + "'");
+      } catch (MismatchedInputException e) {
+        return erro(400, mensagemDeTipoInvalido(e));
       } catch (JsonProcessingException e) {
         return erro(400, "JSON inválido");
       }
-
-      String erroValidacao = validar(request);
-      if (erroValidacao != null) {
-        return erro(400, erroValidacao);
+      if (request == null) {
+        return erro(400, "O corpo da requisição é obrigatório");
       }
 
-      Avaliacao avaliacao = Avaliacao.nova(request.descricao(), request.nota());
-      repository.salvar(avaliacao);
-
-      if (avaliacao.urgencia() == Urgencia.CRITICA) {
-        alerta.publicar(avaliacao);
+      RegistrarAvaliacao.Resultado resultado;
+      try {
+        resultado = registrarAvaliacao.executar(request.descricao(), request.nota());
+      } catch (AvaliacaoInvalidaException e) {
+        return erro(400, e.getMessage());
       }
 
-      AvaliacaoResponse response = new AvaliacaoResponse(
-          avaliacao.id(),
-          avaliacao.descricao(),
-          avaliacao.nota(),
-          avaliacao.urgencia(),
-          avaliacao.dataEnvio());
-      return resposta(201, response);
+      if (resultado.alertaNaoPublicado()) {
+        Registro.erro(context, ALERTA_NAO_PUBLICADO + " id=" + resultado.avaliacao().id()
+            + " causa=" + resultado.falhaNoAlerta());
+      }
+      return resposta(201, AvaliacaoResponse.de(resultado.avaliacao()));
 
     } catch (RuntimeException e) {
-
-      if (context != null) {
-        context.getLogger().log("Erro ao processar avaliação: " + e);
-      }
+      Registro.erro(context, "Erro ao processar avaliação: " + e);
       return erro(500, "Erro interno ao registrar a avaliação");
     }
   }
 
-  private String validar(AvaliacaoRequest request) {
-    if (request == null) {
-      return "O corpo da requisição é obrigatório";
+  private static ObjectMapper criarMapper() {
+    ObjectMapper mapper = JsonMapper.builder()
+        .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
+        .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+        .build();
+    mapper.coercionConfigFor(LogicalType.Textual)
+        .setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
+        .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)
+        .setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail);
+    return mapper;
+  }
+
+  private static String mensagemDeTipoInvalido(MismatchedInputException e) {
+    if (e.getPath().isEmpty() || e.getPath().get(0).getFieldName() == null) {
+      return "O corpo da requisição deve ser um objeto JSON";
     }
-    if (request.descricao() == null || request.descricao().isBlank()) {
-      return "O campo 'descricao' é obrigatório";
-    }
-    if (request.nota() == null) {
-      return "O campo 'nota' é obrigatório";
-    }
-    if (request.nota() < 0 || request.nota() > 10) {
-      return "A nota deve estar entre 0 e 10";
-    }
-    return null;
+    String campo = e.getPath().get(0).getFieldName();
+    return "nota".equals(campo)
+        ? "O campo 'nota' deve ser um número inteiro"
+        : "O campo '" + campo + "' deve ser um texto";
   }
 
   private APIGatewayProxyResponseEvent erro(int status, String mensagem) {

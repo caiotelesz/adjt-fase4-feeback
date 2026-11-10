@@ -29,9 +29,23 @@ Resources:
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
+        - AttributeName: diaEnvio
+          AttributeType: S
+        - AttributeName: dataEnvio
+          AttributeType: S
       KeySchema:
         - AttributeName: id
           KeyType: HASH
+      GlobalSecondaryIndexes:
+        # Consulta por periodo sem varrer a tabela: particao = dia, ordenacao = instante do envio
+        - IndexName: por-dia
+          KeySchema:
+            - AttributeName: diaEnvio
+              KeyType: HASH
+            - AttributeName: dataEnvio
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -140,13 +154,14 @@ Resources:
       Environment:
         Variables:
           TABELA_AVALIACOES: !Ref AvaliacoesTable
+          INDICE_POR_DIA: por-dia
           EMAIL_REMETENTE: !Ref EmailRemetente
           EMAIL_ADMIN: !Ref EmailAdmin
       Policies:
         - Statement:
             - Effect: Allow
-              Action: dynamodb:Scan
-              Resource: !GetAtt AvaliacoesTable.Arn
+              Action: dynamodb:Query
+              Resource: !Sub '${AvaliacoesTable.Arn}/index/por-dia'
             - Effect: Allow
               Action: ses:SendEmail
               Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*'

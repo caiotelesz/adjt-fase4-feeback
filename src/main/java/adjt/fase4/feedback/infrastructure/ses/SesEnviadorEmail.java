@@ -1,6 +1,6 @@
 package adjt.fase4.feedback.infrastructure.ses;
 
-import adjt.fase4.feedback.port.EnviadorEmail;
+import adjt.fase4.feedback.application.port.EnviadorEmail;
 import software.amazon.awssdk.services.ses.SesClient;
 import software.amazon.awssdk.services.ses.model.Body;
 import software.amazon.awssdk.services.ses.model.Content;
@@ -8,7 +8,10 @@ import software.amazon.awssdk.services.ses.model.Destination;
 import software.amazon.awssdk.services.ses.model.Message;
 import software.amazon.awssdk.services.ses.model.SendEmailRequest;
 
+/** Envia e-mails em texto puro pelo Amazon SES, sempre do mesmo remetente ao administrador. */
 public class SesEnviadorEmail implements EnviadorEmail {
+
+  private static final String UTF_8 = "UTF-8";
 
   private final SesClient ses;
   private final String remetente;
@@ -26,9 +29,9 @@ public class SesEnviadorEmail implements EnviadorEmail {
         .source(remetente)
         .destination(Destination.builder().toAddresses(destinatario).build())
         .message(Message.builder()
-            .subject(Content.builder().data(assunto).charset("UTF-8").build())
+            .subject(Content.builder().data(assunto).charset(UTF_8).build())
             .body(Body.builder()
-                .text(Content.builder().data(corpo).charset("UTF-8").build())
+                .text(Content.builder().data(corpo).charset(UTF_8).build())
                 .build())
             .build())
         .build());
