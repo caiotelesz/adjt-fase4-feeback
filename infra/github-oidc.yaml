@@ -115,6 +115,15 @@ Resources:
                   - iam:TagRole
                   - iam:UntagRole
                 Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${NomeDaPilha}-*'
+              # Na primeira vez que a conta usa o API Gateway, a AWS cria o papel
+              # vinculado ao servico; quem faz o deploy precisa poder cria-lo.
+              - Sid: PapelVinculadoAoApiGateway
+                Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ops.apigateway.amazonaws.com/AWSServiceRoleForAPIGateway'
+                Condition:
+                  StringEquals:
+                    iam:AWSServiceName: ops.apigateway.amazonaws.com
               - Sid: ServicosUsadosPelaPlataforma
                 Effect: Allow
                 Action:
