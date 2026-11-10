@@ -1,0 +1,16 @@
+# Build (Maven)
+target/
+
+# AWS SAM
+.aws-sam/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# Sistema operacional
+.DS_Store
