@@ -54,6 +54,12 @@ Resources:
   AlertasCriticosTopic:
     Type: AWS::SNS::Topic
 
+  NotificacaoDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
   AlarmesTopic:
     Type: AWS::SNS::Topic
 
@@ -125,6 +131,9 @@ Resources:
       Description: Envia por e-mail o alerta de feedback critico ao administrador
       LoggingConfig:
         LogGroup: !Ref NotificacaoLogGroup
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt NotificacaoDLQ.Arn
       Environment:
         Variables:
           EMAIL_REMETENTE: !Ref EmailRemetente
@@ -175,6 +184,32 @@ Resources:
             Schedule: cron(0 12 ? * MON *)
             Description: Toda segunda-feira as 12h UTC (9h em Brasilia)
 
+  AlertaNaoPublicadoMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AvaliacaoLogGroup
+      FilterPattern: '"ALERTA_CRITICO_NAO_PUBLICADO"'
+      MetricTransformations:
+        - MetricNamespace: !Ref AWS::StackName
+          MetricName: AlertaCriticoNaoPublicado
+          MetricValue: '1'
+          DefaultValue: 0
+
+  AlertaNaoPublicadoAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Feedback critico gravado, mas o alerta nao pode ser publicado no topico
+      Namespace: !Ref AWS::StackName
+      MetricName: AlertaCriticoNaoPublicado
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmesTopic
+
   AvaliacaoErrosAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -203,6 +238,24 @@ Resources:
         - Name: FunctionName
           Value: !Ref NotificacaoCriticaFunction
       Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmesTopic
+
+  NotificacaoDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alerta critico nao entregue apos as tentativas (mensagem na DLQ)
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt NotificacaoDLQ.QueueName
+      Statistic: Maximum
       Period: 300
       EvaluationPeriods: 1
       Threshold: 1
@@ -322,3 +375,6 @@ Outputs:
   RelatorioSemanalFunctionName:
     Description: Nome da funcao do relatorio, para disparo manual no teste
     Value: !Ref RelatorioSemanalFunction
+  NotificacaoDLQUrl:
+    Description: Fila com os alertas criticos que nao puderam ser entregues
+    Value: !Ref NotificacaoDLQ
