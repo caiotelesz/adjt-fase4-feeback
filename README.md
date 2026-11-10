@@ -1,5 +1,8 @@
 # Plataforma de Feedback — Tech Challenge Fase 4
 
+[![CI/CD](https://github.com/caiotelesz/adjt-fase4-feeback/actions/workflows/ci-cd.yml/badge.svg?branch=main)](https://github.com/caiotelesz/adjt-fase4-feeback/actions/workflows/ci-cd.yml)
+[![Versão](https://img.shields.io/github/v/release/caiotelesz/adjt-fase4-feeback?label=vers%C3%A3o)](https://github.com/caiotelesz/adjt-fase4-feeback/releases/latest)
+
 Plataforma serverless na AWS em que estudantes avaliam aulas e administradores acompanham a satisfação: feedbacks críticos geram um aviso imediato por e-mail e, toda semana, um relatório consolidado é enviado.
 
 Trabalho da Fase 4 da pós-graduação em Arquitetura e Desenvolvimento Java (FIAP Pós-Tech), com foco em Cloud Computing, Serverless e deploy em nuvem.
@@ -15,10 +18,11 @@ Trabalho da Fase 4 da pós-graduação em Arquitetura e Desenvolvimento Java (FI
 7. [Segurança e governança de acesso](#segurança-e-governança-de-acesso)
 8. [Monitoramento](#monitoramento)
 9. [Deploy](#deploy)
-10. [Testando a aplicação](#testando-a-aplicação)
-11. [Organização do código](#organização-do-código)
-12. [Qualidade](#qualidade)
-13. [Decisões e limitações](#decisões-e-limitações)
+10. [Versões e releases](#versões-e-releases)
+11. [Testando a aplicação](#testando-a-aplicação)
+12. [Organização do código](#organização-do-código)
+13. [Qualidade](#qualidade)
+14. [Decisões e limitações](#decisões-e-limitações)
 
 ## Requisitos atendidos
 
@@ -26,11 +30,11 @@ Trabalho da Fase 4 da pós-graduação em Arquitetura e Desenvolvimento Java (FI
 |---|---|
 | Ambiente de nuvem configurado, com segurança dos dados e governança de acesso | Toda a infraestrutura em [`template.yaml`](template.yaml): criptografia em repouso, um papel IAM de menor privilégio por função, API com chave e cota ([detalhes](#segurança-e-governança-de-acesso)) |
 | Componentes de suporte (banco de dados etc.) | DynamoDB, SNS, SQS, SES e EventBridge declarados no mesmo template |
-| Deploy automatizado dos componentes atualizáveis | Pipeline no GitHub Actions: testa, valida o template e publica com AWS SAM a cada push na `main` ([detalhes](#deploy)) |
+| Deploy automatizado dos componentes atualizáveis | Pipeline no GitHub Actions: a cada merge na `main` testa, publica com AWS SAM, confere a versão no ar e registra a release ([detalhes](#deploy)) |
 | Aplicação monitorada | Logs estruturados, rastreamento com X-Ray, 6 alarmes com aviso por e-mail e um painel no CloudWatch ([detalhes](#monitoramento)) |
 | Notificações automáticas aos administradores para problemas críticos | Feedback com nota de 0 a 3 dispara e-mail imediato; falhas da própria plataforma disparam alarmes por e-mail |
 | Relatório semanal, com média de avaliações | Função agendada para toda segunda-feira, com média, quantidade por dia e por urgência |
-| Serverless, com no mínimo duas funções e responsabilidade única | Três funções Lambda, cada uma com um único gatilho e um único motivo para mudar |
+| Serverless, com no mínimo duas funções e responsabilidade única | Três funções Lambda de negócio e uma de apoio (versão), cada uma com um único gatilho e um único motivo para mudar |
 
 ## Arquitetura da solução
 
@@ -74,7 +78,7 @@ Componentes e o papel de cada um:
 | Componente | Papel | Por que este |
 |---|---|---|
 | API Gateway (REST) | Porta de entrada HTTP | Chave de API, cota e limite de requisições sem código |
-| AWS Lambda (Java 21, arm64) | Execução das três funções | Paga por uso; arm64 é mais barato por milissegundo |
+| AWS Lambda (Java 21, arm64) | Execução das funções | Paga por uso; arm64 é mais barato por milissegundo |
 | DynamoDB (sob demanda) | Armazenamento das avaliações | Sem servidor, sem capacidade mínima, criptografado |
 | SNS | Desacopla o recebimento do aviso por e-mail | O estudante não espera o e-mail; novas reações ao alerta entram como novos assinantes |
 | SQS | Fila de mensagens não entregues (DLQ) | Nenhum alerta crítico é descartado em silêncio |
@@ -141,6 +145,18 @@ AVALIAÇÕES
 - [ATENCAO] 05/11/2026 09:00:00 | nota 5 | Conteúdo mediano
 ```
 
+### 4. Versão publicada — `VersaoFunction`
+
+| | |
+|---|---|
+| Classe | [`VersaoHandler`](src/main/java/adjt/fase4/feedback/handler/VersaoHandler.java) |
+| Gatilho | API Gateway, `GET /versao` (rota pública) |
+| Responsabilidade | Informar a versão da aplicação que está no ar e o commit de origem |
+| Permissões | Nenhuma além de escrever os próprios logs |
+| Variáveis | `VERSAO`, `COMMIT` (preenchidas pelo pipeline a cada deploy) |
+
+É uma função de apoio à operação: o pipeline a consulta depois de cada deploy para confirmar que a versão nova entrou.
+
 ## API
 
 ### `POST /avaliacao`
@@ -179,6 +195,18 @@ Resposta `201 Created`:
 | 429 | Limite de requisições ou cota diária excedidos | Resposta do API Gateway |
 | 500 | Falha inesperada | `{"erro": "Erro interno ao registrar a avaliação"}` (o detalhe fica só no log) |
 
+### `GET /versao`
+
+Rota pública, sem chave de API e sem dados de negócio. Mostra o que está publicado:
+
+```json
+{
+  "aplicacao": "feedback-platform",
+  "versao": "1.0.3",
+  "commit": "7874842"
+}
+```
+
 ## Regras de negócio
 
 | Nota | Urgência | Efeito |
@@ -214,7 +242,7 @@ Resposta `201 Created`:
 | Recurso | O que oferece |
 |---|---|
 | Logs | Um grupo por função, em JSON (nível, identificador da requisição), retenção de 14 dias |
-| Rastreamento | AWS X-Ray ativo no API Gateway e nas três funções |
+| Rastreamento | AWS X-Ray ativo no API Gateway e nas funções |
 | Painel | `FeedbackDashboard`: invocações, erros, tráfego e erros da API, duração (média e p99), alertas com problema e consumo do DynamoDB |
 | Alarmes | Seis alarmes que publicam em um tópico SNS com o administrador inscrito por e-mail |
 
@@ -253,8 +281,11 @@ O SAM pede os parâmetros `EmailRemetente`, `EmailAdmin` e `FusoHorario`. Ao fin
 
 O fluxo [`ci-cd.yml`](.github/workflows/ci-cd.yml) roda em todo push e pull request:
 
-1. **Build e testes:** `mvn verify` (testes, regras de arquitetura e cobertura mínima) e `sam validate --lint`.
-2. **Deploy** (somente na `main`): `sam deploy` com o pacote gerado na etapa anterior.
+1. **Build e testes:** define a versão, roda `mvn verify` (testes, regras de arquitetura e cobertura mínima) e `sam validate --lint`.
+2. **Deploy** (somente na `main`): `sam deploy` com o pacote gerado na etapa anterior e, em seguida, consulta `GET /versao` para confirmar que a versão nova está no ar.
+3. **Release** (somente na `main`, após o deploy): cria a tag e a release no GitHub.
+
+Na prática: commit numa branch, pull request, revisão e merge. O merge publica na AWS sem nenhum passo manual. Em pull requests só a primeira etapa roda.
 
 Preparação, feita uma única vez:
 
@@ -281,6 +312,25 @@ aws cloudformation deploy --stack-name feedback-platform-github-oidc --template-
 ```bash
 sam delete --stack-name feedback-platform
 ```
+
+## Versões e releases
+
+Cada publicação recebe um número no formato `MAIOR.MENOR.CORREÇÃO` ([versionamento semântico](https://semver.org/lang/pt-BR/)):
+
+- a série `MAIOR.MENOR` vem da versão do [`pom.xml`](pom.xml) e só muda quando alguém a altera de propósito (funcionalidade nova ou mudança incompatível);
+- o último número cresce sozinho a cada merge publicado, a partir da última tag existente.
+
+A mesma versão aparece em três lugares, sempre apontando para o mesmo commit:
+
+| Onde | Como ver |
+|---|---|
+| Na aplicação em execução | `GET /versao` |
+| No GitHub | [Releases](https://github.com/caiotelesz/adjt-fase4-feeback/releases): tag `vX.Y.Z`, notas com os pull requests incluídos e o pacote `feedback-platform-X.Y.Z.jar` anexado |
+| Na AWS | Saída `Versao` da pilha no CloudFormation |
+
+A release só é registrada depois que a aplicação publicada responde com a versão nova. Se o deploy ou a conferência falhar, não há release.
+
+Para voltar a uma versão anterior, reverta o commit com `git revert` e faça o merge: o pipeline publica o estado anterior como uma nova versão, mantendo o histórico.
 
 ## Testando a aplicação
 
@@ -326,7 +376,7 @@ src/main/java/adjt/fase4/feedback
 │   ├── port          Interfaces do que a aplicação precisa do mundo externo
 │   └── dto           Contrato da mensagem de alerta crítico
 ├── infrastructure    Adaptadores de saída: DynamoDB, SNS, SES e configuração
-└── handler           Adaptadores de entrada: as três funções Lambda
+└── handler           Adaptadores de entrada: as funções Lambda
 ```
 
 - O **domínio** só conhece Java. É onde ficam a classificação de urgência, as regras da avaliação e o cálculo do relatório.
@@ -342,7 +392,7 @@ Essas regras são verificadas automaticamente por [`ArquiteturaTest`](src/test/j
 mvn clean verify
 ```
 
-- 87 testes automatizados (JUnit 5), sem acesso à rede: domínio, casos de uso, handlers e adaptadores (com clientes AWS substituídos por dublês em memória).
+- 89 testes automatizados (JUnit 5), sem acesso à rede: domínio, casos de uso, handlers e adaptadores (com clientes AWS substituídos por dublês em memória).
 - Testes de arquitetura com ArchUnit.
 - Cobertura de linhas medida pelo JaCoCo, com mínimo de 80% exigido no build (relatório em `target/site/jacoco/index.html`).
 
