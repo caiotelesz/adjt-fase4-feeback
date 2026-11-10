@@ -11,6 +11,10 @@ Parameters:
     Type: String
     Description: E-mail do administrador, recebe alertas, relatorio e alarmes
     AllowedPattern: '[^@\s]+@[^@\s]+\.[^@\s]+'
+  FusoHorario:
+    Type: String
+    Description: Fuso horario usado nas datas dos e-mails e no agrupamento por dia do relatorio
+    Default: America/Sao_Paulo
 
 Globals:
   Function:
@@ -20,8 +24,18 @@ Globals:
     MemorySize: 512
     Timeout: 15
     CodeUri: target/feedback-platform-1.0-SNAPSHOT.jar
+    Tracing: Active
+    Environment:
+      Variables:
+        FUSO_HORARIO: !Ref FusoHorario
+  Api:
+    OpenApiVersion: 3.0.1
+    TracingEnabled: true
 
 Resources:
+  # ---------------------------------------------------------------------------
+  # Dados
+  # ---------------------------------------------------------------------------
   AvaliacoesTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -29,16 +43,41 @@ Resources:
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
+        - AttributeName: diaEnvio
+          AttributeType: S
+        - AttributeName: dataEnvio
+          AttributeType: S
       KeySchema:
         - AttributeName: id
           KeyType: HASH
+      GlobalSecondaryIndexes:
+        # Consulta por periodo sem varrer a tabela: particao = dia, ordenacao = instante do envio
+        - IndexName: por-dia
+          KeySchema:
+            - AttributeName: diaEnvio
+              KeyType: HASH
+            - AttributeName: dataEnvio
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
 
+  # ---------------------------------------------------------------------------
+  # Mensageria
+  # ---------------------------------------------------------------------------
   AlertasCriticosTopic:
     Type: AWS::SNS::Topic
+    Properties:
+      KmsMasterKeyId: alias/aws/sns
+
+  NotificacaoDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
 
   AlarmesTopic:
     Type: AWS::SNS::Topic
@@ -50,11 +89,25 @@ Resources:
       Protocol: email
       Endpoint: !Ref EmailAdmin
 
+  # ---------------------------------------------------------------------------
+  # API
+  # ---------------------------------------------------------------------------
   AvaliacaoApi:
     Type: AWS::Serverless::Api
     Properties:
       Name: !Sub '${AWS::StackName}-api'
       StageName: prod
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          Description: Plano de uso da API de avaliacoes
+          Quota:
+            Limit: 5000
+            Period: DAY
+          Throttle:
+            RateLimit: 10
+            BurstLimit: 20
       MethodSettings:
         - HttpMethod: '*'
           ResourcePath: '/*'
@@ -62,6 +115,9 @@ Resources:
           ThrottlingBurstLimit: 20
           MetricsEnabled: true
 
+  # ---------------------------------------------------------------------------
+  # Logs
+  # ---------------------------------------------------------------------------
   AvaliacaoLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -77,6 +133,9 @@ Resources:
     Properties:
       RetentionInDays: 14
 
+  # ---------------------------------------------------------------------------
+  # Funcoes
+  # ---------------------------------------------------------------------------
   AvaliacaoFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -84,6 +143,7 @@ Resources:
       Description: Recebe a avaliacao, valida, classifica, grava e publica alerta se critica
       LoggingConfig:
         LogGroup: !Ref AvaliacaoLogGroup
+        LogFormat: JSON
       Environment:
         Variables:
           TABELA_AVALIACOES: !Ref AvaliacoesTable
@@ -111,6 +171,10 @@ Resources:
       Description: Envia por e-mail o alerta de feedback critico ao administrador
       LoggingConfig:
         LogGroup: !Ref NotificacaoLogGroup
+        LogFormat: JSON
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt NotificacaoDLQ.Arn
       Environment:
         Variables:
           EMAIL_REMETENTE: !Ref EmailRemetente
@@ -137,16 +201,18 @@ Resources:
       Timeout: 60
       LoggingConfig:
         LogGroup: !Ref RelatorioLogGroup
+        LogFormat: JSON
       Environment:
         Variables:
           TABELA_AVALIACOES: !Ref AvaliacoesTable
+          INDICE_POR_DIA: por-dia
           EMAIL_REMETENTE: !Ref EmailRemetente
           EMAIL_ADMIN: !Ref EmailAdmin
       Policies:
         - Statement:
             - Effect: Allow
-              Action: dynamodb:Scan
-              Resource: !GetAtt AvaliacoesTable.Arn
+              Action: dynamodb:Query
+              Resource: !Sub '${AvaliacoesTable.Arn}/index/por-dia'
             - Effect: Allow
               Action: ses:SendEmail
               Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*'
@@ -160,10 +226,39 @@ Resources:
             Schedule: cron(0 12 ? * MON *)
             Description: Toda segunda-feira as 12h UTC (9h em Brasilia)
 
+  # ---------------------------------------------------------------------------
+  # Monitoramento
+  # ---------------------------------------------------------------------------
+  AlertaNaoPublicadoMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AvaliacaoLogGroup
+      FilterPattern: '"ALERTA_CRITICO_NAO_PUBLICADO"'
+      MetricTransformations:
+        - MetricNamespace: !Ref AWS::StackName
+          MetricName: AlertaCriticoNaoPublicado
+          MetricValue: '1'
+          DefaultValue: 0
+
+  AlertaNaoPublicadoAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Feedback critico gravado, mas o alerta nao pode ser publicado no topico
+      Namespace: !Ref AWS::StackName
+      MetricName: AlertaCriticoNaoPublicado
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmesTopic
+
   AvaliacaoErrosAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: Erros na funcao que recebe avaliacoes
+      AlarmDescription: Erros de execucao (falha de inicializacao ou tempo esgotado) na funcao que recebe avaliacoes
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions:
@@ -188,6 +283,24 @@ Resources:
         - Name: FunctionName
           Value: !Ref NotificacaoCriticaFunction
       Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmesTopic
+
+  NotificacaoDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alerta critico nao entregue apos as tentativas (mensagem na DLQ)
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt NotificacaoDLQ.QueueName
+      Statistic: Maximum
       Period: 300
       EvaluationPeriods: 1
       Threshold: 1
@@ -287,10 +400,35 @@ Resources:
               "properties": {
                 "title": "Duracao da funcao de avaliacoes (ms)",
                 "region": "${AWS::Region}",
-                "stat": "Average",
                 "period": 300,
                 "metrics": [
-                  ["AWS/Lambda", "Duration", "FunctionName", "${AvaliacaoFunction}"]
+                  ["AWS/Lambda", "Duration", "FunctionName", "${AvaliacaoFunction}", {"stat": "Average"}],
+                  ["AWS/Lambda", "Duration", "FunctionName", "${AvaliacaoFunction}", {"stat": "p99"}]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 0, "y": 12, "width": 12, "height": 6,
+              "properties": {
+                "title": "Alertas criticos com problema",
+                "region": "${AWS::Region}",
+                "period": 300,
+                "metrics": [
+                  ["${AWS::StackName}", "AlertaCriticoNaoPublicado", {"stat": "Sum"}],
+                  ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${NotificacaoDLQ.QueueName}", {"stat": "Maximum"}]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 12, "width": 12, "height": 6,
+              "properties": {
+                "title": "DynamoDB: capacidade consumida",
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "${AvaliacoesTable}"],
+                  ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "${AvaliacoesTable}"]
                 ]
               }
             }
@@ -301,9 +439,18 @@ Outputs:
   ApiUrl:
     Description: URL do endpoint POST /avaliacao
     Value: !Sub 'https://${AvaliacaoApi}.execute-api.${AWS::Region}.amazonaws.com/prod/avaliacao'
+  ApiKeyId:
+    Description: Identificador da chave de API (o valor e obtido com aws apigateway get-api-key --include-value)
+    Value: !Ref AvaliacaoApiApiKey
   TabelaAvaliacoes:
     Description: Nome da tabela DynamoDB
     Value: !Ref AvaliacoesTable
   RelatorioSemanalFunctionName:
     Description: Nome da funcao do relatorio, para disparo manual no teste
     Value: !Ref RelatorioSemanalFunction
+  NotificacaoDLQUrl:
+    Description: Fila com os alertas criticos que nao puderam ser entregues
+    Value: !Ref NotificacaoDLQ
+  DashboardUrl:
+    Description: Painel de monitoramento no CloudWatch
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${FeedbackDashboard}'
