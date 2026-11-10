@@ -5,10 +5,24 @@ Description: >
   primeiro deploy automatizado.
 
 Parameters:
-  Repositorio:
+  DonoDoRepositorio:
     Type: String
-    Default: caiotelesz/adjt-fase4-feeback
-    Description: Repositorio do GitHub autorizado a assumir o papel (dono/nome)
+    Default: caiotelesz
+    Description: Usuario ou organizacao dona do repositorio no GitHub
+  NomeDoRepositorio:
+    Type: String
+    Default: adjt-fase4-feeback
+    Description: Nome do repositorio no GitHub
+  IdDoDono:
+    Type: String
+    Default: '103958122'
+    AllowedPattern: '[0-9]+'
+    Description: Identificador numerico do dono (gh api repos/DONO/NOME --jq .owner.id)
+  IdDoRepositorio:
+    Type: String
+    Default: '1422795260'
+    AllowedPattern: '[0-9]+'
+    Description: Identificador numerico do repositorio (gh api repos/DONO/NOME --jq .id)
   NomeDaPilha:
     Type: String
     Default: feedback-platform
@@ -50,11 +64,16 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-              StringLike:
-                # Somente a branch main e o ambiente "producao" do repositorio informado
+                # Somente a branch main e o ambiente "producao" deste repositorio.
+                # O GitHub identifica o repositorio pelo nome acompanhado dos
+                # identificadores numericos (dono@id/nome@id), que nao mudam se
+                # a conta ou o repositorio forem renomeados. O formato antigo,
+                # so com os nomes, e mantido por compatibilidade.
                 token.actions.githubusercontent.com:sub:
-                  - !Sub 'repo:${Repositorio}:ref:refs/heads/main'
-                  - !Sub 'repo:${Repositorio}:environment:producao'
+                  - !Sub 'repo:${DonoDoRepositorio}@${IdDoDono}/${NomeDoRepositorio}@${IdDoRepositorio}:ref:refs/heads/main'
+                  - !Sub 'repo:${DonoDoRepositorio}@${IdDoDono}/${NomeDoRepositorio}@${IdDoRepositorio}:environment:producao'
+                  - !Sub 'repo:${DonoDoRepositorio}/${NomeDoRepositorio}:ref:refs/heads/main'
+                  - !Sub 'repo:${DonoDoRepositorio}/${NomeDoRepositorio}:environment:producao'
       Policies:
         - PolicyName: deploy-da-plataforma
           PolicyDocument:

@@ -264,7 +264,7 @@ Preparação, feita uma única vez:
 aws cloudformation deploy --stack-name feedback-platform-github-oidc --template-file infra/github-oidc.yaml --capabilities CAPABILITY_NAMED_IAM
 ```
 
-   O papel só pode ser assumido pela branch `main` e pelo ambiente `producao` deste repositório, e suas permissões se limitam aos serviços usados pela plataforma. Se a conta já tiver o provedor `token.actions.githubusercontent.com`, acrescente `--parameter-overrides CriarProvedorOidc=false`.
+   O papel só pode ser assumido pela branch `main` e pelo ambiente `producao` deste repositório, e suas permissões se limitam aos serviços usados pela plataforma. A condição de confiança usa o nome e os identificadores numéricos do dono e do repositório (parâmetros `IdDoDono` e `IdDoRepositorio`, obtidos com `gh api repos/DONO/NOME --jq '.owner.id, .id'`); em um fork, informe os valores do seu repositório. Se a conta já tiver o provedor `token.actions.githubusercontent.com`, acrescente `--parameter-overrides CriarProvedorOidc=false`.
 
 2. Cadastrar no repositório, em *Settings → Secrets and variables → Actions*:
 
