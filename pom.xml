@@ -7,7 +7,7 @@
 
   <groupId>adjt.fase4.feedback</groupId>
   <artifactId>feedback-platform</artifactId>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.0.0</version>
   <packaging>jar</packaging>
 
   <name>feedback-platform</name>
@@ -113,6 +113,8 @@
   </dependencies>
 
   <build>
+    <!-- Nome fixo: o template e o pipeline nao dependem do numero da versao -->
+    <finalName>feedback-platform</finalName>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

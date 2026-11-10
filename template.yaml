@@ -23,7 +23,7 @@ Globals:
       - arm64
     MemorySize: 512
     Timeout: 15
-    CodeUri: target/feedback-platform-1.0-SNAPSHOT.jar
+    CodeUri: target/feedback-platform.jar
     Tracing: Active
     Environment:
       Variables:

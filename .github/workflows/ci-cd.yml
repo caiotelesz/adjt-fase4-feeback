@@ -43,7 +43,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: feedback-platform
-          path: target/feedback-platform-1.0-SNAPSHOT.jar
+          path: target/feedback-platform.jar
           if-no-files-found: error
           retention-days: 7
 
