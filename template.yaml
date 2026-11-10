@@ -75,6 +75,17 @@ Resources:
     Properties:
       Name: !Sub '${AWS::StackName}-api'
       StageName: prod
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          Description: Plano de uso da API de avaliacoes
+          Quota:
+            Limit: 5000
+            Period: DAY
+          Throttle:
+            RateLimit: 10
+            BurstLimit: 20
       MethodSettings:
         - HttpMethod: '*'
           ResourcePath: '/*'
@@ -369,6 +380,9 @@ Outputs:
   ApiUrl:
     Description: URL do endpoint POST /avaliacao
     Value: !Sub 'https://${AvaliacaoApi}.execute-api.${AWS::Region}.amazonaws.com/prod/avaliacao'
+  ApiKeyId:
+    Description: Identificador da chave de API (o valor e obtido com aws apigateway get-api-key --include-value)
+    Value: !Ref AvaliacaoApiApiKey
   TabelaAvaliacoes:
     Description: Nome da tabela DynamoDB
     Value: !Ref AvaliacoesTable
