@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Papel IAM que o GitHub Actions assume por OIDC para publicar a pilha da
-  plataforma de feedback. Criado uma unica vez por conta AWS, antes do
-  primeiro deploy automatizado.
+  Preparacao da conta para o deploy automatizado da plataforma de feedback:
+  o papel IAM que o GitHub Actions assume por OIDC e o repositorio do Amazon
+  ECR que guarda a imagem das funcoes. Criado uma unica vez por conta AWS.
 
 Parameters:
   DonoDoRepositorio:
@@ -44,6 +44,47 @@ Resources:
       Url: https://token.actions.githubusercontent.com
       ClientIdList:
         - sts.amazonaws.com
+
+  # Guarda a imagem de conteiner das funcoes. O pipeline envia uma imagem por
+  # versao publicada; as mais antigas sao removidas automaticamente.
+  RepositorioDeImagens:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref NomeDaPilha
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Mantem apenas as 10 imagens mais recentes",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      # O servico Lambda precisa ler a imagem para criar e atualizar as funcoes
+      RepositoryPolicyText:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: LeituraPeloLambda
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
+            Condition:
+              StringLike:
+                aws:sourceArn: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*'
 
   PapelDeDeploy:
     Type: AWS::IAM::Role
@@ -115,6 +156,25 @@ Resources:
                   - iam:TagRole
                   - iam:UntagRole
                 Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${NomeDaPilha}-*'
+              - Sid: LoginNoRegistroDeImagens
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Sid: EnvioELeituraDaImagemDasFuncoes
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeImages
+                  - ecr:DescribeRepositories
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:GetRepositoryPolicy
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:SetRepositoryPolicy
+                  - ecr:UploadLayerPart
+                Resource: !GetAtt RepositorioDeImagens.Arn
               # Na primeira vez que a conta usa o API Gateway, a AWS cria o papel
               # vinculado ao servico; quem faz o deploy precisa poder cria-lo.
               - Sid: PapelVinculadoAoApiGateway
@@ -138,6 +198,9 @@ Resources:
                 Resource: '*'
 
 Outputs:
+  RepositorioDeImagensUri:
+    Description: Endereco do repositorio de imagens das funcoes
+    Value: !GetAtt RepositorioDeImagens.RepositoryUri
   PapelArn:
     Description: Valor do secret AWS_DEPLOY_ROLE_ARN no GitHub
     Value: !GetAtt PapelDeDeploy.Arn

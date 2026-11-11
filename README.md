@@ -78,7 +78,8 @@ Componentes e o papel de cada um:
 | Componente | Papel | Por que este |
 |---|---|---|
 | API Gateway (REST) | Porta de entrada HTTP | Chave de API, cota e limite de requisições sem código |
-| AWS Lambda (Java 21, arm64) | Execução das funções | Paga por uso; arm64 é mais barato por milissegundo |
+| AWS Lambda (Java 21, arm64) | Execução das funções, a partir de uma imagem de contêiner | Paga por uso; arm64 é mais barato por milissegundo |
+| Amazon ECR | Guarda a imagem das funções, uma por versão publicada | Verificação de vulnerabilidades a cada envio e limpeza automática das imagens antigas |
 | DynamoDB (sob demanda) | Armazenamento das avaliações | Sem servidor, sem capacidade mínima, criptografado |
 | SNS | Desacopla o recebimento do aviso por e-mail | O estudante não espera o e-mail; novas reações ao alerta entram como novos assinantes |
 | SQS | Fila de mensagens não entregues (DLQ) | Nenhum alerta crítico é descartado em silêncio |
@@ -262,17 +263,32 @@ O endereço do painel sai no *output* `DashboardUrl` da pilha.
 ### Pré-requisitos
 
 - Conta AWS e [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) configurados.
-- Java 21 e Maven 3.9+.
+- Java 21, Maven 3.9+ e Docker.
+- A pilha de preparação da conta ([`infra/github-oidc.yaml`](infra/github-oidc.yaml)), que cria o repositório de imagens no Amazon ECR.
 - No Amazon SES, na região do deploy, a identidade do e-mail remetente verificada. Com a conta no *sandbox* do SES, o e-mail do administrador também precisa estar verificado.
 
 ### Deploy manual
+
+As funções são publicadas como imagem de contêiner. O caminho normal é o deploy automatizado, descrito a seguir; para publicar à mão, compile, envie a imagem ao ECR e informe o endereço dela ao SAM:
 
 ```bash
 mvn clean verify
 ```
 
 ```bash
-sam deploy --guided --stack-name feedback-platform --capabilities CAPABILITY_IAM --resolve-s3
+REPOSITORIO=$(aws ecr describe-repositories --repository-names feedback-platform --query 'repositories[0].repositoryUri' --output text)
+```
+
+```bash
+aws ecr get-login-password | docker login --username AWS --password-stdin "${REPOSITORIO%%/*}"
+```
+
+```bash
+docker buildx build --platform linux/arm64 --provenance=false --tag "$REPOSITORIO:manual" --push .
+```
+
+```bash
+sam deploy --guided --stack-name feedback-platform --capabilities CAPABILITY_IAM --resolve-s3 --image-repository "$REPOSITORIO" --parameter-overrides "ImagemUri=$REPOSITORIO:manual"
 ```
 
 O SAM pede os parâmetros `EmailRemetente`, `EmailAdmin` e `FusoHorario`. Ao final, o administrador recebe um e-mail do SNS para **confirmar a inscrição nos alarmes**.
@@ -281,15 +297,15 @@ O SAM pede os parâmetros `EmailRemetente`, `EmailAdmin` e `FusoHorario`. Ao fin
 
 O fluxo [`ci-cd.yml`](.github/workflows/ci-cd.yml) roda em todo push e pull request:
 
-1. **Build e testes:** define a versão, roda `mvn verify` (testes, regras de arquitetura e cobertura mínima) e `sam validate --lint`.
-2. **Deploy** (somente na `main`): `sam deploy` com o pacote gerado na etapa anterior e, em seguida, consulta `GET /versao` para confirmar que a versão nova está no ar.
+1. **Build e testes:** define a versão, roda `mvn verify` (testes, regras de arquitetura e cobertura mínima), `sam validate --lint` e constrói a imagem das funções.
+2. **Deploy** (somente na `main`): constrói a imagem a partir do pacote testado, envia ao Amazon ECR, roda `sam deploy` apontando para ela e, em seguida, consulta `GET /versao` para confirmar que a versão nova está no ar.
 3. **Release** (somente na `main`, após o deploy): cria a tag e a release no GitHub.
 
 Na prática: commit numa branch, pull request, revisão e merge. O merge publica na AWS sem nenhum passo manual. Em pull requests só a primeira etapa roda.
 
 Preparação, feita uma única vez:
 
-1. Criar na conta AWS o papel que o GitHub assume, a partir de [`infra/github-oidc.yaml`](infra/github-oidc.yaml):
+1. Criar na conta AWS o papel que o GitHub assume e o repositório de imagens, a partir de [`infra/github-oidc.yaml`](infra/github-oidc.yaml):
 
 ```bash
 aws cloudformation deploy --stack-name feedback-platform-github-oidc --template-file infra/github-oidc.yaml --capabilities CAPABILITY_NAMED_IAM
@@ -326,7 +342,7 @@ A mesma versão aparece em três lugares, sempre apontando para o mesmo commit:
 |---|---|
 | Na aplicação em execução | `GET /versao` |
 | No GitHub | [Releases](https://github.com/caiotelesz/adjt-fase4-feeback/releases): tag `vX.Y.Z`, notas com os pull requests incluídos e o pacote `feedback-platform-X.Y.Z.jar` anexado |
-| Na AWS | Saída `Versao` da pilha no CloudFormation |
+| Na AWS | Saída `Versao` da pilha no CloudFormation e tag da imagem no Amazon ECR (`feedback-platform:X.Y.Z`) |
 
 A release só é registrada depois que a aplicação publicada responde com a versão nova. Se o deploy ou a conferência falhar, não há release.
 
@@ -407,6 +423,7 @@ As decisões estão em [`docs/adr`](docs/adr):
 | [0003](docs/adr/0003-dynamodb-com-indice-por-dia.md) | DynamoDB com índice por dia para o relatório |
 | [0004](docs/adr/0004-alerta-critico-assincrono.md) | Alerta crítico assíncrono via SNS, com tratamento de falhas |
 | [0005](docs/adr/0005-api-com-chave-e-plano-de-uso.md) | API protegida por chave e plano de uso |
+| [0006](docs/adr/0006-funcoes-em-imagem-de-conteiner.md) | Funções publicadas como imagem de contêiner |
 
 Limitações conhecidas:
 

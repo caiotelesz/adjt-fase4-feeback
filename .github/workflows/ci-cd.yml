@@ -1,8 +1,9 @@
 name: CI/CD
 
-# Em todo push e pull request: compila, roda os testes e valida o template.
-# No push para a main (ou disparo manual): publica na AWS com o SAM, confere
-# a versao que ficou no ar e registra a release no GitHub.
+# Em todo push e pull request: compila, roda os testes, valida o template e
+# constroi a imagem das funcoes. No push para a main (ou disparo manual): envia
+# a imagem ao Amazon ECR, publica na AWS com o SAM, confere a versao que ficou
+# no ar e registra a release no GitHub.
 on:
   push:
     branches: [main]
@@ -64,6 +65,12 @@ jobs:
       - name: Validar o template
         run: sam validate --lint --region us-east-2
 
+      # Garante, ja no pull request, que o Dockerfile continua valido
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Construir a imagem das funcoes
+        run: docker buildx build --platform linux/arm64 --provenance=false --tag feedback-platform:verificacao .
+
       - name: Guardar o pacote das funcoes
         uses: actions/upload-artifact@v4
         with:
@@ -110,6 +117,36 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      # A imagem leva a versao como tag, mas o deploy usa o digest (o
+      # identificador do conteudo), que nao pode ser trocado depois.
+      # --provenance=false gera o formato de manifesto aceito pelo Lambda.
+      - name: Construir e enviar a imagem das funcoes
+        run: |
+          set -euo pipefail
+          REPOSITORIO=$(aws ecr describe-repositories \
+            --repository-names "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --query 'repositories[0].repositoryUri' \
+            --output text)
+          docker buildx build \
+            --platform linux/arm64 \
+            --provenance=false \
+            --tag "$REPOSITORIO:$VERSAO" \
+            --push .
+          DIGEST=$(aws ecr describe-images \
+            --repository-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --image-ids "imageTag=$VERSAO" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+          echo "REPOSITORIO=$REPOSITORIO" >> "$GITHUB_ENV"
+          echo "IMAGEM_URI=$REPOSITORIO@$DIGEST" >> "$GITHUB_ENV"
+          echo "Imagem enviada: \`$STACK_NAME:$VERSAO\` ($DIGEST)" >> "$GITHUB_STEP_SUMMARY"
+
       - uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
@@ -121,11 +158,13 @@ jobs:
             --stack-name "$STACK_NAME" \
             --region "$AWS_REGION" \
             --resolve-s3 \
+            --image-repository "$REPOSITORIO" \
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --on-failure DELETE \
             --parameter-overrides \
+              "ImagemUri=$IMAGEM_URI" \
               "EmailRemetente=$EMAIL_REMETENTE" \
               "EmailAdmin=$EMAIL_ADMIN" \
               "Versao=$VERSAO" \
