@@ -101,7 +101,9 @@ jobs:
   deploy:
     name: Deploy na AWS
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Somente no repositorio oficial. Em um fork, o fluxo roda ate os testes: o
+    # fork nao tem os segredos, e o papel de deploy na AWS nao confia nele.
+    if: github.repository == 'caiotelesz/adjt-fase4-feeback' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
