@@ -72,7 +72,7 @@ jobs:
         run: docker buildx build --platform linux/arm64 --provenance=false --tag feedback-platform:verificacao .
 
       - name: Guardar o pacote das funcoes
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: feedback-platform
           path: target/feedback-platform.jar
@@ -81,7 +81,7 @@ jobs:
 
       - name: Guardar o relatorio de cobertura
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cobertura
           path: target/site/jacoco
