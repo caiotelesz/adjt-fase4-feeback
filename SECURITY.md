@@ -9,7 +9,7 @@ Use dados fictícios nas reproduções. Não execute testes de carga nem testes 
 - **Acesso à API:** chave (`x-api-key`) com plano de uso e limite de requisições. A única rota pública é `GET /versao`, que não expõe dados.
 - **Menor privilégio:** cada função Lambda tem o próprio papel IAM, restrito às ações e aos recursos que utiliza.
 - **Dados:** DynamoDB criptografado em repouso, com recuperação a um ponto no tempo; o feedback é anônimo e a descrição não é escrita em log.
-- **Deploy:** o pipeline autentica na AWS por OIDC, sem chave de acesso guardada, e só a branch `main` pode assumir o papel de deploy.
+- **Deploy:** o pipeline autentica na AWS por OIDC, sem chave de acesso guardada, e o papel de deploy só é concedido a execuções na branch `main`. Proteger a `main` (pull request e verificações obrigatórios) é configuração do repositório e cabe a quem o administra.
 - **Dependências:** o Dependabot acompanha as bibliotecas Maven e as ações do GitHub.
 
 ## Ao corrigir uma falha

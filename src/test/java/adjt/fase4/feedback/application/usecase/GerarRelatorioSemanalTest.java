@@ -50,7 +50,22 @@ class GerarRelatorioSemanalTest {
   void deveConsultarOsUltimosSeteDias() {
     casoDeUsoCom(List.of()).executar();
 
-    assertEquals(List.of(Instant.parse("2026-11-02T12:00:00Z"), AGORA), periodosConsultados);
+    assertEquals(List.of(Instant.parse("2026-11-02T12:00:00.001Z"), AGORA), periodosConsultados);
+  }
+
+  @Test
+  void deveEncaixarOsPeriodosDeDuasSemanasSemIntervaloNemSobreposicao() {
+    GerarRelatorioSemanal casoDeUso = casoDeUsoCom(List.of());
+    Instant primeiraSegunda = Instant.parse("2026-11-09T12:00:00Z");
+    Instant segundaSeguinte = Instant.parse("2026-11-16T12:00:00Z");
+
+    casoDeUso.executar(primeiraSegunda);
+    casoDeUso.executar(segundaSeguinte);
+
+    Instant fimDoPrimeiro = periodosConsultados.get(1);
+    Instant inicioDoSegundo = periodosConsultados.get(2);
+    assertEquals(primeiraSegunda, fimDoPrimeiro);
+    assertEquals(fimDoPrimeiro.plusMillis(1), inicioDoSegundo);
   }
 
   @Test
@@ -82,6 +97,34 @@ class GerarRelatorioSemanalTest {
         - [CRITICA] 03/11/2026 18:00:00 | nota 2 | Áudio ruim
         - [ATENCAO] 05/11/2026 09:00:00 | nota 5 | Conteúdo mediano
         """, corpos.get(0));
+  }
+
+  @Test
+  void deveListarApenasAsAvaliacoesMaisRecentesQuandoHouverMuitas() {
+    List<Avaliacao> muitas = new ArrayList<>();
+    for (int i = 0; i < 205; i++) {
+      muitas.add(new Avaliacao("id-" + i, "Feedback numero " + i, new Nota(8),
+          Instant.parse("2026-11-03T12:00:00Z").plusSeconds(i)));
+    }
+
+    casoDeUsoCom(muitas).executar();
+
+    String corpo = corpos.get(0);
+    assertTrue(corpo.contains("Total de avaliações: 205"));
+    assertTrue(corpo.contains("AVALIAÇÕES (as 200 mais recentes de 205)"));
+    assertFalse(corpo.contains("| Feedback numero 4\n"));
+    assertTrue(corpo.contains("| Feedback numero 5\n"));
+    assertTrue(corpo.contains("| Feedback numero 204\n"));
+  }
+
+  @Test
+  void deveResumirDescricoesLongasNaListagem() {
+    String longa = "a".repeat(250);
+
+    casoDeUsoCom(List.of(avaliacao(longa, 8, "2026-11-03T12:00:00Z"))).executar();
+
+    assertTrue(corpos.get(0).contains("| " + "a".repeat(200) + "…\n"));
+    assertFalse(corpos.get(0).contains("a".repeat(201)));
   }
 
   @Test

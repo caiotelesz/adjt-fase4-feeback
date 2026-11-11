@@ -19,5 +19,5 @@ Usar o modelo FaaS na AWS: AWS Lambda (Java 21, arm64) para o código e serviço
 ## Consequências
 
 - Custo zero com a plataforma parada e escala automática.
-- *Cold start* do Java na primeira chamada. Mitigado com cliente HTTP leve, 512 MB de memória e arm64; o SnapStart fica como evolução, se necessário.
+- *Cold start* do Java na primeira chamada. Mitigado com cliente HTTP leve, 512 MB de memória e arm64. O SnapStart não está disponível para funções em imagem de contêiner (ver ADR 0006); se a partida a frio se tornar um problema, a alternativa é a simultaneidade provisionada.
 - Acoplamento ao provedor, contido nos pacotes `handler` e `infrastructure` (ver ADR 0002).

@@ -105,16 +105,15 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                # Somente a branch main e o ambiente "producao" deste repositorio.
+                # Somente execucoes na branch main deste repositorio. Um fluxo
+                # alterado em outra branch apresenta outra identidade e e recusado.
                 # O GitHub identifica o repositorio pelo nome acompanhado dos
                 # identificadores numericos (dono@id/nome@id), que nao mudam se
                 # a conta ou o repositorio forem renomeados. O formato antigo,
                 # so com os nomes, e mantido por compatibilidade.
                 token.actions.githubusercontent.com:sub:
                   - !Sub 'repo:${DonoDoRepositorio}@${IdDoDono}/${NomeDoRepositorio}@${IdDoRepositorio}:ref:refs/heads/main'
-                  - !Sub 'repo:${DonoDoRepositorio}@${IdDoDono}/${NomeDoRepositorio}@${IdDoRepositorio}:environment:producao'
                   - !Sub 'repo:${DonoDoRepositorio}/${NomeDoRepositorio}:ref:refs/heads/main'
-                  - !Sub 'repo:${DonoDoRepositorio}/${NomeDoRepositorio}:environment:producao'
       Policies:
         - PolicyName: deploy-da-plataforma
           PolicyDocument:
@@ -151,11 +150,25 @@ Resources:
                   - iam:DetachRolePolicy
                   - iam:GetRole
                   - iam:GetRolePolicy
-                  - iam:PassRole
                   - iam:PutRolePolicy
                   - iam:TagRole
                   - iam:UntagRole
                 Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${NomeDaPilha}-*'
+              # Os papeis criados so podem ser entregues ao Lambda
+              - Sid: EntregaDosPapeisSomenteAoLambda
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${NomeDaPilha}-*'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: lambda.amazonaws.com
+              # O nome deste papel comeca com o mesmo prefixo dos papeis das
+              # funcoes; a negacao explicita impede que ele amplie as proprias
+              # permissoes.
+              - Sid: NaoAlteraOProprioPapel
+                Effect: Deny
+                Action: iam:*
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${NomeDaPilha}-github-deploy'
               - Sid: LoginNoRegistroDeImagens
                 Effect: Allow
                 Action: ecr:GetAuthorizationToken

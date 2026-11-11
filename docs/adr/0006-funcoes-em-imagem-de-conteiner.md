@@ -25,7 +25,7 @@ Publicar as quatro funções a partir de **uma única imagem de contêiner**, co
 
 ## Consequências
 
-- Cada versão publicada tem um artefato imutável e identificável (tag e digest), o mesmo modelo usado em ambientes de contêineres; voltar a uma versão é apontar para a imagem anterior.
+- Cada versão publicada tem um artefato identificável pela tag e fixado pelo digest, que é o que o deploy referencia, o mesmo modelo usado em ambientes de contêineres; voltar a uma versão é apontar para a imagem anterior.
 - A imagem pode ser executada localmente com o emulador do Lambda embutido na imagem base, o que permite testar a função fora da AWS.
 - A verificação de vulnerabilidades passa a cobrir também a imagem base, e não só as bibliotecas Java.
 - A partida a frio fica mais lenta do que com Zip, pois a imagem é maior (cerca de 125 MB contra 14 MB).

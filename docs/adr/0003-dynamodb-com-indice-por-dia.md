@@ -21,4 +21,4 @@ Usar DynamoDB sob demanda, com chave de partição `id` e um índice secundário
 - O custo do relatório depende do volume da semana.
 - O papel da função de relatório tem `dynamodb:Query` apenas no índice.
 - O índice duplica o armazenamento dos itens (projeção completa), aceitável para itens pequenos.
-- Leituras em índice global são eventualmente consistentes: uma avaliação gravada segundos antes do relatório pode ficar para o seguinte.
+- Leituras em índice global são eventualmente consistentes: uma avaliação gravada segundos antes do fim do período pode não aparecer no relatório. Como os períodos se encaixam pelo horário agendado, ela também não entra no seguinte; o risco é aceito por se tratar de uma janela de segundos em um relatório semanal.

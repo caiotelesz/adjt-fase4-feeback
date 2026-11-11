@@ -1,6 +1,7 @@
 package adjt.fase4.feedback.handler;
 
 import java.time.Clock;
+import java.time.Instant;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
@@ -46,7 +47,11 @@ public class RelatorioSemanalHandler implements RequestHandler<ScheduledEvent, V
 
   @Override
   public Void handleRequest(ScheduledEvent event, Context context) {
-    ResumoSemanal resumo = gerarRelatorioSemanal.executar();
+    // O horário do agendamento mantém os períodos semanais contíguos; no
+    // disparo manual ele não existe e vale o instante atual.
+    ResumoSemanal resumo = event != null && event.getTime() != null
+        ? gerarRelatorioSemanal.executar(Instant.ofEpochMilli(event.getTime().getMillis()))
+        : gerarRelatorioSemanal.executar();
     Registro.info(context, "Relatório semanal enviado total=" + resumo.total());
     return null;
   }

@@ -1,6 +1,6 @@
 name: CI/CD
 
-# Em todo push e pull request: compila, roda os testes, valida o template e
+# Em pull requests para a main e em pushes na main: compila, roda os testes, valida o template e
 # constroi a imagem das funcoes. No push para a main (ou disparo manual): envia
 # a imagem ao Amazon ECR, publica na AWS com o SAM, confere a versao que ficou
 # no ar e registra a release no GitHub.
@@ -103,7 +103,6 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    environment: producao
     permissions:
       contents: read
       id-token: write
@@ -127,6 +126,8 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          # O repositorio e publico: o numero da conta nao deve aparecer nos logs
+          mask-aws-account-id: true
 
       - uses: aws-actions/amazon-ecr-login@v2
 

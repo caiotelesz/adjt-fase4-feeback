@@ -36,10 +36,24 @@ public class GerarRelatorioSemanal {
     this.formatador = new FormatadorRelatorioSemanal(fuso);
   }
 
-  /** @return o resumo calculado, para registro em log por quem chamou */
+  /** Gera o relatório dos sete dias que terminam agora. */
   public ResumoSemanal executar() {
-    Instant fim = relogio.instant();
-    Instant inicio = fim.minus(PERIODO);
+    return executar(relogio.instant());
+  }
+
+  /**
+   * Gera o relatório dos sete dias que terminam em {@code fim}.
+   *
+   * <p>Na execução agendada, {@code fim} é o horário do agendamento, e não o
+   * instante em que a função de fato rodou. Assim, os períodos de duas semanas
+   * seguidas se encaixam sem deixar intervalo descoberto nem contar a mesma
+   * avaliação duas vezes: cada período começa um milissegundo depois do fim
+   * do anterior.
+   *
+   * @return o resumo calculado, para registro em log por quem chamou
+   */
+  public ResumoSemanal executar(Instant fim) {
+    Instant inicio = fim.minus(PERIODO).plusMillis(1);
 
     List<Avaliacao> avaliacoes = consulta.buscarEntre(inicio, fim);
     ResumoSemanal resumo = ResumoSemanal.de(avaliacoes, fuso);
