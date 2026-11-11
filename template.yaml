@@ -108,6 +108,10 @@ Resources:
     Properties:
       Name: !Sub '${AWS::StackName}-api'
       StageName: prod
+      # Republica a API a cada deploy. Sem isso, quando uma funcao e substituida
+      # (por exemplo, ao mudar o tipo de pacote), o estagio continua apontando
+      # para a funcao antiga, ja removida, e a API responde 500.
+      AlwaysDeploy: true
       Auth:
         ApiKeyRequired: true
         UsagePlan:
