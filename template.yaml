@@ -15,6 +15,8 @@ Parameters:
     Type: String
     Description: Fuso horario usado nas datas dos e-mails e no agrupamento por dia do relatorio
     Default: America/Sao_Paulo
+    AllowedPattern: '[A-Za-z]+(/[A-Za-z0-9_+-]+)*'
+    ConstraintDescription: Informe um fuso no formato Area/Local, por exemplo America/Sao_Paulo
   ImagemUri:
     Type: String
     Description: Imagem de conteiner das funcoes no Amazon ECR (repositorio@digest ou repositorio:tag)
@@ -49,6 +51,9 @@ Resources:
   # ---------------------------------------------------------------------------
   AvaliacoesTable:
     Type: AWS::DynamoDB::Table
+    # Os feedbacks sobrevivem a remocao ou substituicao da pilha
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:

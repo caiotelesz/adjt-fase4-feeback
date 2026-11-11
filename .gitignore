@@ -1,8 +1,9 @@
 # Build (Maven)
 target/
 
-# AWS SAM
+# AWS SAM (o samconfig.toml guarda os parametros informados no deploy guiado)
 .aws-sam/
+samconfig.toml
 
 # IDEs
 .idea/
