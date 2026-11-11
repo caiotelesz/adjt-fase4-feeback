@@ -1,11 +1,39 @@
-# Plataforma de Feedback — Tech Challenge Fase 4
+<div align="center">
+
+# Plataforma de Feedback
+
+**Estudantes avaliam aulas. Feedbacks críticos avisam os administradores na hora. Toda semana sai um relatório.**
+
+Tech Challenge da Fase 4 — Pós-graduação em Arquitetura e Desenvolvimento Java (FIAP Pós-Tech)
 
 [![CI/CD](https://github.com/caiotelesz/adjt-fase4-feeback/actions/workflows/ci-cd.yml/badge.svg?branch=main)](https://github.com/caiotelesz/adjt-fase4-feeback/actions/workflows/ci-cd.yml)
 [![Versão](https://img.shields.io/github/v/release/caiotelesz/adjt-fase4-feeback?label=vers%C3%A3o)](https://github.com/caiotelesz/adjt-fase4-feeback/releases/latest)
+![Java 21](https://img.shields.io/badge/Java-21-437291?logo=openjdk&logoColor=white)
+![AWS Lambda](https://img.shields.io/badge/AWS-Lambda-FF9900?logo=awslambda&logoColor=white)
+![AWS SAM](https://img.shields.io/badge/IaC-AWS%20SAM-232F3E?logo=amazonwebservices&logoColor=white)
+![Docker](https://img.shields.io/badge/Pacote-imagem%20de%20cont%C3%AAiner-2496ED?logo=docker&logoColor=white)
 
-Plataforma serverless na AWS em que estudantes avaliam aulas e administradores acompanham a satisfação: feedbacks críticos geram um aviso imediato por e-mail e, toda semana, um relatório consolidado é enviado.
+</div>
 
-Trabalho da Fase 4 da pós-graduação em Arquitetura e Desenvolvimento Java (FIAP Pós-Tech), com foco em Cloud Computing, Serverless e deploy em nuvem.
+Aplicação serverless na AWS, com foco em Cloud Computing, Serverless e deploy em nuvem. Não há servidor para administrar: o código roda em funções AWS Lambda, a infraestrutura inteira é descrita em código e cada merge na `main` é testado, publicado e versionado automaticamente.
+
+## Em resumo
+
+| | |
+|---|---|
+| **O que faz** | Recebe feedbacks por uma API, envia e-mail imediato quando a nota é crítica (0 a 3) e manda um relatório semanal com a média das avaliações |
+| **Como roda** | Quatro funções AWS Lambda (Java 21) atrás de um API Gateway, com DynamoDB, SNS, SQS, SES e EventBridge |
+| **Como é publicada** | Pull request → testes → merge → deploy automático na AWS → conferência da versão → release no GitHub |
+| **Como é observada** | Logs estruturados, rastreamento, seis alarmes com aviso por e-mail e um painel no CloudWatch |
+| **Qualidade** | 89 testes automatizados, regras de arquitetura verificadas no build e cobertura mínima de 80% |
+
+```bash
+curl -X POST "https://<api>/prod/avaliacao" -H "Content-Type: application/json" -H "x-api-key: <chave>" -d '{"descricao":"O áudio da aula estava cortando","nota":2}'
+```
+
+```json
+{"id":"0c6de54b-63e3-4aff-bb85-3e904b1593ac","descricao":"O áudio da aula estava cortando","nota":2,"urgencia":"CRITICA","dataEnvio":"2026-11-11T00:02:26.048Z"}
+```
 
 ## Sumário
 
@@ -20,7 +48,7 @@ Trabalho da Fase 4 da pós-graduação em Arquitetura e Desenvolvimento Java (FI
 9. [Deploy](#deploy)
 10. [Versões e releases](#versões-e-releases)
 11. [Testando a aplicação](#testando-a-aplicação)
-12. [Organização do código](#organização-do-código)
+12. [Estrutura do repositório](#estrutura-do-repositório) e [organização do código](#organização-do-código)
 13. [Qualidade](#qualidade)
 14. [Decisões e limitações](#decisões-e-limitações)
 
@@ -377,6 +405,28 @@ Relatório semanal sem esperar a segunda-feira:
 ```bash
 aws lambda invoke --function-name <RelatorioSemanalFunctionName> --payload '{}' --cli-binary-format raw-in-base64-out /dev/stdout
 ```
+
+## Estrutura do repositório
+
+```text
+.
+├── .github/
+│   ├── workflows/ci-cd.yml        Pipeline: testes, deploy na AWS e release
+│   ├── dependabot.yml             Atualização automática de dependências
+│   ├── pull_request_template.md   Modelo de pull request
+│   └── ISSUE_TEMPLATE/            Formulário para relatar erros
+├── docs/adr/                      Decisões de arquitetura, com alternativas e consequências
+├── infra/github-oidc.yaml         Preparação da conta AWS: papel do pipeline e repositório de imagens
+├── src/main/java/                 Código da aplicação
+├── src/test/java/                 Testes automatizados
+├── Dockerfile                     Imagem de contêiner das funções
+├── template.yaml                  Infraestrutura da aplicação (AWS SAM)
+├── pom.xml                        Build, dependências e regras de qualidade (Maven)
+├── SECURITY.md                    Política de segurança
+└── README.md
+```
+
+O projeto é pequeno de propósito: um único módulo Java, um arquivo que descreve toda a infraestrutura e um pipeline. Não há front-end, banco para instalar nem servidor para configurar.
 
 ## Organização do código
 
