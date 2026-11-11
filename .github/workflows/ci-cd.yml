@@ -4,11 +4,22 @@ name: CI/CD
 # constroi a imagem das funcoes. No push para a main (ou disparo manual): envia
 # a imagem ao Amazon ECR, publica na AWS com o SAM, confere a versao que ficou
 # no ar e registra a release no GitHub.
+#
+# Mudancas que so tocam documentacao nao disparam o pipeline: nao ha o que
+# testar nem publicar, e uma release sem alteracao de codigo so gera ruido.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
 
 permissions:
