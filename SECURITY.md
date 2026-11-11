@@ -10,7 +10,7 @@ Use dados fictícios nas reproduções. Não execute testes de carga nem testes 
 - **Menor privilégio:** cada função Lambda tem o próprio papel IAM, restrito às ações e aos recursos que utiliza.
 - **Dados:** DynamoDB criptografado em repouso, com recuperação a um ponto no tempo; o feedback é anônimo e a descrição não é escrita em log.
 - **Deploy:** o pipeline autentica na AWS por OIDC, sem chave de acesso guardada, e o papel de deploy só é concedido a execuções na branch `main`. Proteger a `main` (pull request e verificações obrigatórios) é configuração do repositório e cabe a quem o administra.
-- **Dependências:** o Dependabot acompanha as bibliotecas Maven e as ações do GitHub.
+- **Dependências:** as versões das bibliotecas e das ações do pipeline são fixadas no repositório e atualizadas por pull request, com todos os testes.
 
 ## Ao corrigir uma falha
 

@@ -416,7 +416,6 @@ aws lambda invoke --function-name <RelatorioSemanalFunctionName> --payload '{}' 
 .
 ├── .github/
 │   ├── workflows/ci-cd.yml        Pipeline: testes, deploy na AWS e release
-│   ├── dependabot.yml             Atualização automática de dependências
 │   ├── pull_request_template.md   Modelo de pull request
 │   └── ISSUE_TEMPLATE/            Formulário para relatar erros
 ├── docs/adr/                      Decisões de arquitetura, com alternativas e consequências
