@@ -2,6 +2,7 @@ package adjt.fase4.feedback.application.usecase;
 
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Locale;
 
 import adjt.fase4.feedback.domain.Avaliacao;
@@ -9,6 +10,10 @@ import adjt.fase4.feedback.domain.ResumoSemanal;
 
 /** Transforma o {@link ResumoSemanal} no texto do e-mail enviado aos administradores. */
 final class FormatadorRelatorioSemanal {
+
+  /** Limites da listagem, para o e-mail não crescer sem controle em semanas de muito volume. */
+  static final int MAXIMO_DE_AVALIACOES_LISTADAS = 200;
+  static final int TAMANHO_MAXIMO_DA_DESCRICAO_LISTADA = 200;
 
   private static final Locale BRASIL = Locale.forLanguageTag("pt-BR");
 
@@ -40,13 +45,28 @@ final class FormatadorRelatorioSemanal {
     resumo.quantidadePorDia().forEach((dia, quantidade) -> texto
         .append("- ").append(datas.dia(dia)).append(": ").append(quantidade).append("\n"));
 
-    texto.append("\nAVALIAÇÕES\n");
-    for (Avaliacao avaliacao : resumo.avaliacoes()) {
+    List<Avaliacao> todas = resumo.avaliacoes();
+    List<Avaliacao> listadas = todas.size() > MAXIMO_DE_AVALIACOES_LISTADAS
+        ? todas.subList(todas.size() - MAXIMO_DE_AVALIACOES_LISTADAS, todas.size())
+        : todas;
+
+    texto.append("\nAVALIAÇÕES");
+    if (listadas.size() < todas.size()) {
+      texto.append(" (as ").append(listadas.size()).append(" mais recentes de ").append(todas.size()).append(")");
+    }
+    texto.append("\n");
+    for (Avaliacao avaliacao : listadas) {
       texto.append("- [").append(avaliacao.urgencia()).append("] ")
           .append(datas.diaEHora(avaliacao.dataEnvio()))
           .append(" | nota ").append(avaliacao.nota().valor())
-          .append(" | ").append(avaliacao.descricao()).append("\n");
+          .append(" | ").append(resumida(avaliacao.descricao())).append("\n");
     }
     return texto.toString();
+  }
+
+  private static String resumida(String descricao) {
+    return descricao.length() <= TAMANHO_MAXIMO_DA_DESCRICAO_LISTADA
+        ? descricao
+        : descricao.substring(0, TAMANHO_MAXIMO_DA_DESCRICAO_LISTADA) + "…";
   }
 }

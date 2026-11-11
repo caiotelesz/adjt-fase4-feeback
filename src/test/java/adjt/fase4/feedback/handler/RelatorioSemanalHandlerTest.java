@@ -46,6 +46,26 @@ class RelatorioSemanalHandlerTest {
   }
 
   @Test
+  void deveUsarOHorarioDoAgendamentoComoFimDoPeriodo() {
+    List<Instant> periodos = new ArrayList<>();
+    RelatorioSemanalHandler handler = new RelatorioSemanalHandler(new GerarRelatorioSemanal(
+        (inicio, fim) -> {
+          periodos.add(inicio);
+          periodos.add(fim);
+          return List.of();
+        },
+        (assunto, corpo) -> corpos.add(corpo),
+        Clock.fixed(AGORA.plusSeconds(42), ZoneOffset.UTC),
+        ZoneId.of("America/Sao_Paulo")));
+    ScheduledEvent agendamento = new ScheduledEvent();
+    agendamento.setTime(new org.joda.time.DateTime(AGORA.toEpochMilli()));
+
+    handler.handleRequest(agendamento, contexto);
+
+    assertEquals(List.of(Instant.parse("2026-11-02T12:00:00.001Z"), AGORA), periodos);
+  }
+
+  @Test
   void devePropagarAFalhaParaQueAExecucaoDispareOAlarme() {
     RelatorioSemanalHandler comFalha = handlerCom((assunto, corpo) -> {
       throw new IllegalStateException("SES indisponível");
