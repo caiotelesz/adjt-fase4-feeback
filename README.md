@@ -25,7 +25,7 @@ Aplicação serverless na AWS, com foco em Cloud Computing, Serverless e deploy 
 | **Como roda** | Quatro funções AWS Lambda (Java 21) atrás de um API Gateway, com DynamoDB, SNS, SQS, SES e EventBridge |
 | **Como é publicada** | Pull request → testes → merge → deploy automático na AWS → conferência da versão → release no GitHub |
 | **Como é observada** | Logs estruturados, rastreamento, seis alarmes com aviso por e-mail e um painel no CloudWatch |
-| **Qualidade** | 89 testes automatizados, regras de arquitetura verificadas no build e cobertura mínima de 80% |
+| **Qualidade** | 93 testes automatizados, regras de arquitetura verificadas no build e cobertura mínima de 80% |
 
 ```bash
 curl -X POST "https://<api>/prod/avaliacao" -H "Content-Type: application/json" -H "x-api-key: <chave>" -d '{"descricao":"O áudio da aula estava cortando","nota":2}'
@@ -319,11 +319,11 @@ docker buildx build --platform linux/arm64 --provenance=false --tag "$REPOSITORI
 sam deploy --guided --stack-name feedback-platform --capabilities CAPABILITY_IAM --resolve-s3 --image-repository "$REPOSITORIO" --parameter-overrides "ImagemUri=$REPOSITORIO:manual"
 ```
 
-O SAM pede os parâmetros `EmailRemetente`, `EmailAdmin` e `FusoHorario`. Ao final, o administrador recebe um e-mail do SNS para **confirmar a inscrição nos alarmes**.
+O SAM pede também os parâmetros `EmailRemetente`, `EmailAdmin` e `FusoHorario`; `Versao` e `Commit` podem ficar com os valores padrão. Ao final, o administrador recebe um e-mail do SNS para **confirmar a inscrição nos alarmes**.
 
 ### Deploy automatizado
 
-O fluxo [`ci-cd.yml`](.github/workflows/ci-cd.yml) roda em todo push e pull request:
+O fluxo [`ci-cd.yml`](.github/workflows/ci-cd.yml) roda em pull requests para a `main` e em pushes na `main`:
 
 1. **Build e testes:** define a versão, roda `mvn verify` (testes, regras de arquitetura e cobertura mínima), `sam validate --lint` e constrói a imagem das funções.
 2. **Deploy** (somente na `main`): constrói a imagem a partir do pacote testado, envia ao Amazon ECR, roda `sam deploy` apontando para ela e, em seguida, consulta `GET /versao` para confirmar que a versão nova está no ar.
@@ -339,7 +339,7 @@ Preparação, feita uma única vez:
 aws cloudformation deploy --stack-name feedback-platform-github-oidc --template-file infra/github-oidc.yaml --capabilities CAPABILITY_NAMED_IAM
 ```
 
-   O papel só pode ser assumido pela branch `main` e pelo ambiente `producao` deste repositório, e suas permissões se limitam aos serviços usados pela plataforma. A condição de confiança usa o nome e os identificadores numéricos do dono e do repositório (parâmetros `IdDoDono` e `IdDoRepositorio`, obtidos com `gh api repos/DONO/NOME --jq '.owner.id, .id'`); em um fork, informe os valores do seu repositório. Se a conta já tiver o provedor `token.actions.githubusercontent.com`, acrescente `--parameter-overrides CriarProvedorOidc=false`.
+   O papel só é concedido a execuções na branch `main` deste repositório. Ele pode criar e alterar apenas os papéis das funções (prefixo `feedback-platform-`), só pode entregá-los ao Lambda e não pode alterar a si mesmo. Nos demais serviços usados pela plataforma, a permissão ainda vale para a conta inteira; restringi-la aos recursos da pilha é uma evolução prevista. A condição de confiança usa o nome e os identificadores numéricos do dono e do repositório (parâmetros `IdDoDono` e `IdDoRepositorio`, obtidos com `gh api repos/DONO/NOME --jq '.owner.id, .id'`); em um fork, informe os valores do seu repositório. Se a conta já tiver o provedor `token.actions.githubusercontent.com`, acrescente `--parameter-overrides CriarProvedorOidc=false`.
 
 2. Cadastrar no repositório, em *Settings → Secrets and variables → Actions*:
 
@@ -356,6 +356,10 @@ aws cloudformation deploy --stack-name feedback-platform-github-oidc --template-
 ```bash
 sam delete --stack-name feedback-platform
 ```
+
+A tabela de avaliações é preservada de propósito (`DeletionPolicy: Retain`), para que os feedbacks não se percam junto com a pilha. Para apagá-la também, use `aws dynamodb delete-table` com o nome mostrado na saída `TabelaAvaliacoes`.
+
+A pilha de preparação (`feedback-platform-github-oidc`) é removida à parte; antes, é preciso apagar as imagens do repositório no Amazon ECR.
 
 ## Versões e releases
 
@@ -458,7 +462,7 @@ Essas regras são verificadas automaticamente por [`ArquiteturaTest`](src/test/j
 mvn clean verify
 ```
 
-- 89 testes automatizados (JUnit 5), sem acesso à rede: domínio, casos de uso, handlers e adaptadores (com clientes AWS substituídos por dublês em memória).
+- 93 testes automatizados (JUnit), sem acesso à rede: domínio, casos de uso, handlers e adaptadores (com clientes AWS substituídos por dublês em memória).
 - Testes de arquitetura com ArchUnit.
 - Cobertura de linhas medida pelo JaCoCo, com mínimo de 80% exigido no build (relatório em `target/site/jacoco/index.html`).
 

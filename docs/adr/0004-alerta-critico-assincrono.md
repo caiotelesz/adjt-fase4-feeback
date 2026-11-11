@@ -24,6 +24,6 @@ Gravar no banco e publicar uma mensagem são duas operações em serviços difer
 ## Consequências
 
 - Recebimento e notificação evoluem e falham de forma independente.
-- Nenhum feedback aceito é perdido e nenhuma falha de alerta passa em silêncio.
+- Nenhum feedback aceito é perdido, e as falhas de alerta previstas (publicação no tópico e envio do e-mail) geram alarme. Uma falha de entrega do próprio SNS à função não tem alarme específico.
 - A entrega é *ao menos uma vez*: em casos raros o administrador pode receber o mesmo aviso duas vezes.
 - Um alerta cuja publicação falhou não é reenviado sozinho; o administrador é avisado pelo alarme e encontra o identificador no log.

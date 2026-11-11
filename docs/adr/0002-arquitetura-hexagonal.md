@@ -24,6 +24,6 @@ As regras de dependência são verificadas por testes de arquitetura (ArchUnit).
 
 ## Consequências
 
-- 87 testes rodam sem rede e sem credenciais; os casos de uso são testados com dublês simples das portas.
+- Os testes rodam sem rede e sem credenciais; os casos de uso são testados com dublês simples das portas.
 - Trocar um serviço (por exemplo, o provedor de e-mail) altera apenas um adaptador.
 - Mais classes do que a versão ingênua, o que se justifica pela testabilidade e pela clareza das responsabilidades.
