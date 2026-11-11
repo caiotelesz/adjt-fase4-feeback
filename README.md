@@ -329,7 +329,7 @@ O fluxo [`ci-cd.yml`](.github/workflows/ci-cd.yml) roda em pull requests para a 
 2. **Deploy** (somente na `main`): constrói a imagem a partir do pacote testado, envia ao Amazon ECR, roda `sam deploy` apontando para ela e, em seguida, consulta `GET /versao` para confirmar que a versão nova está no ar.
 3. **Release** (somente na `main`, após o deploy): cria a tag e a release no GitHub.
 
-Na prática: commit numa branch, pull request, revisão e merge. O merge publica na AWS sem nenhum passo manual. Em pull requests só a primeira etapa roda.
+Na prática: commit numa branch, pull request, revisão e merge. O merge publica na AWS sem nenhum passo manual. Em pull requests só a primeira etapa roda. Em forks também: o deploy e a release só acontecem no repositório oficial.
 
 Preparação, feita uma única vez:
 
