@@ -1,0 +1,3 @@
+# O contexto da imagem só precisa do pacote já compilado.
+*
+!target/feedback-platform.jar

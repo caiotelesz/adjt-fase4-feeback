@@ -15,6 +15,9 @@ Parameters:
     Type: String
     Description: Fuso horario usado nas datas dos e-mails e no agrupamento por dia do relatorio
     Default: America/Sao_Paulo
+  ImagemUri:
+    Type: String
+    Description: Imagem de conteiner das funcoes no Amazon ECR (repositorio@digest ou repositorio:tag)
   Versao:
     Type: String
     Description: Versao da aplicacao publicada (definida pelo pipeline)
@@ -26,12 +29,10 @@ Parameters:
 
 Globals:
   Function:
-    Runtime: java21
     Architectures:
       - arm64
     MemorySize: 512
     Timeout: 15
-    CodeUri: target/feedback-platform.jar
     Tracing: Active
     Environment:
       Variables:
@@ -154,7 +155,12 @@ Resources:
   AvaliacaoFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: adjt.fase4.feedback.handler.AvaliacaoHandler::handleRequest
+      # Todas as funcoes usam a mesma imagem; o que muda e o handler
+      PackageType: Image
+      ImageUri: !Ref ImagemUri
+      ImageConfig:
+        Command:
+          - adjt.fase4.feedback.handler.AvaliacaoHandler::handleRequest
       Description: Recebe a avaliacao, valida, classifica, grava e publica alerta se critica
       LoggingConfig:
         LogGroup: !Ref AvaliacaoLogGroup
@@ -182,7 +188,12 @@ Resources:
   NotificacaoCriticaFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: adjt.fase4.feedback.handler.NotificacaoCriticaHandler::handleRequest
+      # Todas as funcoes usam a mesma imagem; o que muda e o handler
+      PackageType: Image
+      ImageUri: !Ref ImagemUri
+      ImageConfig:
+        Command:
+          - adjt.fase4.feedback.handler.NotificacaoCriticaHandler::handleRequest
       Description: Envia por e-mail o alerta de feedback critico ao administrador
       LoggingConfig:
         LogGroup: !Ref NotificacaoLogGroup
@@ -211,7 +222,12 @@ Resources:
   RelatorioSemanalFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: adjt.fase4.feedback.handler.RelatorioSemanalHandler::handleRequest
+      # Todas as funcoes usam a mesma imagem; o que muda e o handler
+      PackageType: Image
+      ImageUri: !Ref ImagemUri
+      ImageConfig:
+        Command:
+          - adjt.fase4.feedback.handler.RelatorioSemanalHandler::handleRequest
       Description: Gera o relatorio semanal de feedbacks e envia por e-mail ao administrador
       Timeout: 60
       LoggingConfig:
@@ -244,7 +260,12 @@ Resources:
   VersaoFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: adjt.fase4.feedback.handler.VersaoHandler::handleRequest
+      # Todas as funcoes usam a mesma imagem; o que muda e o handler
+      PackageType: Image
+      ImageUri: !Ref ImagemUri
+      ImageConfig:
+        Command:
+          - adjt.fase4.feedback.handler.VersaoHandler::handleRequest
       Description: Informa a versao da aplicacao que esta publicada
       LoggingConfig:
         LogGroup: !Ref VersaoLogGroup
